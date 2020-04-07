@@ -22,6 +22,4 @@ class Sphere3DSimple:
     def MLE_1(self, X):
         pi = torch.tensor([2 * (2 * np.pi) ** (3 / 2)]).to('cuda')
         sigma = torch.tensor([self.sigma]).to('cuda')
-
-        return - torch.log(pi) - torch.log(sigma) - 3 * torch.log(self.norm(X)) \
-               - 1 / (2 * self.sigma ** 2) * (torch.log(self.norm(X)) - self.m) ** 2
+        return torch.log(pi) + torch.log(sigma) + 3 * torch.log(self.norm(X)) + 1 / (2 * self.sigma ** 2) * (torch.log(self.norm(X)) - self.m) ** 2

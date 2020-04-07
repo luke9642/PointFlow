@@ -13,7 +13,7 @@ ds=shapenet15k
 log_name="ae/${ds}-${cate}-new-sampling"
 data_dir="../ShapeNetCore.v2.PC15k"
 
-python train.py \
+python -u train.py \
     --log_name ${log_name} \
     --lr ${lr} \
     --dataset_type ${ds} \
@@ -29,7 +29,7 @@ python train.py \
     --save_freq 1 \
     --viz_freq 1 \
     --log_freq 1 \
-    --val_freq 10 \
+    --val_freq 4000 \
     --use_deterministic_encoder \
     --prior_weight 0 \
     --entropy_weight 0

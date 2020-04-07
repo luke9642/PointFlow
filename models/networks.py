@@ -156,7 +156,7 @@ class PointFlow(nn.Module):
         z_new = z.view(*z.size())
         z_new = z_new + (log_pz * 0.).mean()
         y, delta_log_py = self.point_cnf(x, z_new, torch.zeros(batch_size, num_points, 1).to(x))
-        log_py = Sphere3DSimple(.01, 0.).MLE_1(y).view(batch_size, -1).sum(1, keepdim=True)
+        log_py = -Sphere3DSimple(.01, 0.).MLE_1(y).view(batch_size, -1).sum(1, keepdim=True)
         delta_log_py = delta_log_py.view(batch_size, num_points, 1).sum(1)
         log_px = log_py - delta_log_py
 
@@ -167,6 +167,8 @@ class PointFlow(nn.Module):
         loss = entropy_loss + prior_loss + recon_loss
         loss.backward()
         opt.step()
+
+        print(f'RECON_LOSS: {recon_loss} | TOTAL LOSS: {loss}')
 
         # LOGGING (after the training)
         if self.distributed:
