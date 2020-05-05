@@ -96,6 +96,12 @@ def standard_normal_logprob(z):
     return log_z - z.pow(2) / 2
 
 
+def standard_normal_logprob_1(z):
+    dim = z.size(-1)
+    log_z = -0.5 * dim * log(2 * pi)
+    return z.size(1) * dim * log_z - (torch.bmm(z.transpose(1, 2), z).diagonal(0, 2) / 2.).view(z.size(0), -1).sum(1, keepdim=True)
+
+
 def set_random_seed(seed):
     """set random seed"""
     random.seed(seed)
