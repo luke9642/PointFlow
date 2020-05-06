@@ -6,7 +6,7 @@ from torch import nn
 from models.flow import get_point_cnf
 from models.flow import get_latent_cnf
 from models.sampling import Sphere3DSimple
-from utils import truncated_normal, reduce_tensor, standard_normal_logprob, standard_normal_logprob_1
+from utils import truncated_normal, reduce_tensor, standard_normal_logprob
 
 
 class Encoder(nn.Module):
@@ -163,27 +163,11 @@ class PointFlow(nn.Module):
         # sigma = np.sqrt(np.log(3. * np.pi / 8.))
         sigma = torch.tensor(1., device='cuda')
 
-        print('=' * 20)
-
-        log_py = standard_normal_logprob(y).view(batch_size, -1).sum(1, keepdim=True)
-        print('standard_normal_logprob_their:', log_py.shape)
-        print(log_py)
-
-        log_py = standard_normal_logprob_1(y)
-        print('standard_normal_logprob_our:', log_py.shape)
-        print(log_py)
+        # log_py = standard_normal_logprob(y).view(batch_size, -1).sum(1, keepdim=True)
 
         sphere = Sphere3DSimple(sigma, m)
 
         log_py = -sphere.MLE_1(y).view(batch_size, -1).sum(1, keepdim=True)
-        print('MLE_1:', log_py.shape)
-        print(log_py)
-
-        log_py = -sphere.MLE_2(y).view(batch_size, -1).sum(1, keepdim=True)
-        print('MLE_2:', log_py.shape)
-        print(log_py)
-
-        print('-' * 20)
 
         delta_log_py = delta_log_py.view(batch_size, num_points, 1).sum(1)
         log_px = log_py - delta_log_py
@@ -193,9 +177,7 @@ class PointFlow(nn.Module):
         recon_loss = -log_px.mean() * self.recon_weight
         prior_loss = -log_pz.mean() * self.prior_weight
         loss = entropy_loss + prior_loss + recon_loss
-        debug = Debug()
         loss.backward()
-        debug.debug()
         opt.step()
 
         print(f'RECON_LOSS: {recon_loss} | TOTAL LOSS: {loss}')
