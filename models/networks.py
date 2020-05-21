@@ -167,7 +167,7 @@ class PointFlow(nn.Module):
 
         sphere = Sphere3DSimple(sigma, m)
 
-        log_py = -sphere.MLE_1(y).view(batch_size, -1).sum(1, keepdim=True)
+        log_py = -sphere.mle(y).view(batch_size, -1).sum(1, keepdim=True)
 
         delta_log_py = delta_log_py.view(batch_size, num_points, 1).sum(1)
         log_px = log_py - delta_log_py

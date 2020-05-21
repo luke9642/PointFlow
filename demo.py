@@ -7,6 +7,8 @@ import torch
 import numpy as np
 import torch.nn as nn
 
+from utils import resume
+
 
 def main(args):
     model = PointFlow(args)
@@ -18,8 +20,11 @@ def main(args):
     model.multi_gpu_wrapper(_transform_)
 
     print("Resume Path:%s" % args.resume_checkpoint)
-    checkpoint = torch.load(args.resume_checkpoint)
-    model.load_state_dict(checkpoint)
+    model, _, start_epoch = resume(
+        args.resume_checkpoint, model, optimizer=None, strict=(not args.resume_non_strict))
+
+    # checkpoint = torch.load(args.resume_checkpoint)
+    # model.load_state_dict(checkpoint['model'])
     model.eval()
 
     _, te_dataset = get_datasets(args)
