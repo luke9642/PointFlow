@@ -1,4 +1,5 @@
 import argparse
+import numpy as np
 
 NONLINEARITIES = ["tanh", "relu", "softplus", "elu", "swish", "square", "identity"]
 SOLVERS = ["dopri5", "bdf", "rk4", "midpoint", 'adams', 'explicit_adams', 'fixed_adams']
@@ -64,6 +65,11 @@ def add_args(parser):
                         help='Learning rate schedule exponential decay rate')
     parser.add_argument('--exp_decay_freq', type=int, default=1,
                         help='Learning rate exponential decay frequency')
+    parser.add_argument('--m', type=lambda x: np.fromstring(x, dtype=float, sep=' '), default=np.log(8. / np.pi) - np.log(3.) / 2.)
+    parser.add_argument('--sigma', type=lambda x: np.fromstring(x, dtype=float, sep=' '), default=np.sqrt(np.log((3 * np.pi) / 8)))
+    parser.add_argument('--decrease-m-sigma', action='store_true')
+    parser.add_argument('--decrease-m-sigma-size', type=int, default=10)
+    parser.add_argument('--decrease-m-sigma-epochs-interval', type=int, default=10)
 
     # data options
     parser.add_argument('--dataset_type', type=str, default="shapenet15k",

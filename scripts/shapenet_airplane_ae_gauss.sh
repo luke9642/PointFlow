@@ -10,7 +10,7 @@ batch_size=16
 lr=2e-3
 epochs=4000
 ds=shapenet15k
-log_name="ae/${ds}-${cate}-new-sampling"
+log_name="ae/${ds}-${cate}-new-sampling-gauss"
 data_dir="../ShapeNetCore.v2.PC15k"
 
 python -u train.py \
@@ -34,8 +34,7 @@ python -u train.py \
     --prior_weight 0 \
     --entropy_weight 0 \
     --use_latent_flow \
-    --m 0.0 \
-    --sigma 0.01
+    --decrease_m_sigma
 
 echo "Done"
 exit 0

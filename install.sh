@@ -3,9 +3,8 @@
 root=`pwd`
 
 # Install dependecies
-conda install numpy matplotlib pillow scipy tqdm scikit-learn -y
-pip install tensorflow-gpu==1.13.1
-pip install tensorboardX==1.7
+conda install numpy pandas pytorch matplotlib pillow scipy tqdm imageio scikit-learn -y
+pip install tensorflow-gpu==1.13.1 tensorboardX==1.7 open3d
 
 # Compile CUDA kernel for CD/EMD loss
 cd metrics/pytorch_structural_losses/

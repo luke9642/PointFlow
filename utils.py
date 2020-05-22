@@ -330,6 +330,9 @@ def save(model, optimizer, epoch, path):
 
 def resume(path, model, optimizer=None, strict=True):
     ckpt = torch.load(path)
+    # from pprint import pprint
+    # pprint(list(ckpt['model'].keys()))
+
     model.load_state_dict(ckpt['model'], strict=strict)
     start_epoch = ckpt['epoch']
     if optimizer is not None:

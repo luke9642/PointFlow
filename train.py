@@ -205,7 +205,7 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
             res = np.concatenate(results, axis=1)
             imageio.imsave(os.path.join(save_dir, 'images', 'tr_vis_conditioned_epoch%d-gpu%s.png' % (epoch, args.gpu or '')),
                               res.transpose((1, 2, 0)))
-            torch.save(res.transpose((1, 2, 0)), Path(save_dir) / 'metadata' / f'tr_vis_conditioned_epoch{epoch}-gpu{args.gpu or ''}.pt')
+            torch.save(res.transpose((1, 2, 0)), Path(save_dir) / 'metadata' / f'tr_vis_conditioned_epoch{epoch}-gpu{args.gpu or ""}.pt')
             if writer is not None:
                 writer.add_image('tr_vis/conditioned', torch.as_tensor(res), epoch)
 

@@ -8,5 +8,6 @@ python demo.py \
     --latent_dims 256-256 \
     --use_latent_flow \
     --num_sample_shapes 20 \
-    --num_sample_points 2048
+    --num_sample_points 2048 \
+    --data_dir ../ShapeNetCore.v2.PC15k
 

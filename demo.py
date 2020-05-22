@@ -11,6 +11,8 @@ from utils import resume
 
 
 def main(args):
+    print(args.use_latent_flow)
+    args.use_deterministic_encoder = True
     model = PointFlow(args)
 
     def _transform_(m):
@@ -18,8 +20,7 @@ def main(args):
 
     model = model.cuda()
     model.multi_gpu_wrapper(_transform_)
-
-    print("Resume Path:%s" % args.resume_checkpoint)
+    print(f'Resume Path: {args.resume_checkpoint}')
     model, _, start_epoch = resume(
         args.resume_checkpoint, model, optimizer=None, strict=(not args.resume_non_strict))
 
