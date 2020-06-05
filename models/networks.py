@@ -73,6 +73,9 @@ class Encoder(nn.Module):
 class PointFlow(nn.Module):
     def __init__(self, args):
         super(PointFlow, self).__init__()
+        sigma = torch.tensor(args.sigma, dtype=torch.float32, device='cuda')
+        m = torch.tensor(args.m, dtype=torch.float32, device='cuda')
+        self.sphere = Sphere3DSimple(sigma, m)
         self.input_dim = args.input_dim
         self.zdim = args.zdim
         self.use_latent_flow = args.use_latent_flow
@@ -157,17 +160,7 @@ class PointFlow(nn.Module):
         z_new = z_new + (log_pz * 0.).mean()
         y, delta_log_py = self.point_cnf(x, z_new, torch.zeros(batch_size, num_points, 1).to(x))
 
-        # m = np.log(3. * np.pi / 8.), np.log(8. / np.pi) - np.log(3.) / 2.
-        m = torch.tensor(0., device='cuda')
-
-        # sigma = np.sqrt(np.log(3. * np.pi / 8.))
-        sigma = torch.tensor(1., device='cuda')
-
-        # log_py = standard_normal_logprob(y).view(batch_size, -1).sum(1, keepdim=True)
-
-        sphere = Sphere3DSimple(sigma, m)
-
-        log_py = -sphere.mle(y).view(batch_size, -1).sum(1, keepdim=True)
+        log_py = -self.sphere.mle(y).view(batch_size, -1).sum(1, keepdim=True)
 
         delta_log_py = delta_log_py.view(batch_size, num_points, 1).sum(1)
         log_px = log_py - delta_log_py
@@ -228,7 +221,7 @@ class PointFlow(nn.Module):
         w = self.sample_gaussian((batch_size, self.zdim), truncate_std_latent, gpu=gpu)
         z = self.latent_cnf(w, None, reverse=True).view(*w.size())
         # Sample points conditioned on the shape code
-        y = Sphere3DSimple(.01, 0.).sample((batch_size, num_points, self.input_dim))
+        y = self.sphere.sample(batch_size, num_points)
         x = self.point_cnf(y, z, reverse=True).view(*y.size())
         return z, x
 
@@ -238,14 +231,8 @@ class PointFlow(nn.Module):
         _, x = self.decode(z, num_points, truncate_std)
         return x
 
-
-import time
-class Debug:
-    def __init__(self):
-        self.ii = 0
-        self.start = time.time()
-
-    def debug(self):
-        self.ii += 1
-        print(round(time.time() - self.start), self.ii)
-        self.start = time.time()
+    def triangulate(self, target):
+        w = self.sample_gaussian((target.size(0), self.zdim), None, gpu=None)
+        z = self.latent_cnf(w, None, reverse=True).view(*w.size())
+        x = self.point_cnf(target, z, reverse=True).view(*target.size())
+        return z, x

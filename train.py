@@ -12,12 +12,13 @@ import random
 import faulthandler
 import torch.multiprocessing as mp
 import time
-import imageio
+from metrics.sphere_triangles import generate
 from models.networks import PointFlow
 from torch import optim
 from args import get_args
 from torch.backends import cudnn
-from utils import AverageValueMeter, set_random_seed, apply_random_rotation, save, resume, visualize_point_clouds
+from models.sampling import SphereScheduler
+from utils import AverageValueMeter, set_random_seed, apply_random_rotation, save, resume, save_triangulation, save_image
 from tensorboardX import SummaryWriter
 from datasets import get_datasets, init_np_seed
 
@@ -26,6 +27,14 @@ faulthandler.enable()
 
 def main_worker(gpu, save_dir, ngpus_per_node, args):
     # basic setup
+    start_m, start_sigma = args.m, args.sigma
+    metadata_dir = Path(save_dir) / 'metadata'
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = Path(save_dir) / 'images'
+    images_dir.mkdir(parents=True, exist_ok=True)
+    mesh_dir = Path(save_dir) / 'mesh'
+    mesh_dir.mkdir(parents=True, exist_ok=True)
+
     cudnn.benchmark = True
     args.gpu = gpu
     if args.gpu is not None:
@@ -84,11 +93,13 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
         args.resume_checkpoint = os.path.join(save_dir, 'checkpoint-latest.pt')  # use the latest checkpoint
     if args.resume_checkpoint is not None:
         if args.resume_optimizer:
-            model, optimizer, start_epoch = resume(
+            model, optimizer, start_epoch, start_m, start_sigma = resume(
                 args.resume_checkpoint, model, optimizer, strict=(not args.resume_non_strict))
         else:
-            model, _, start_epoch = resume(
+            model, _, start_epoch, start_m, start_sigma = resume(
                 args.resume_checkpoint, model, optimizer=None, strict=(not args.resume_non_strict))
+        model.sphere.m = start_m
+        model.sphere.sigma = start_sigma
         print('Resumed from: ' + args.resume_checkpoint)
 
     # initialize datasets and loaders
@@ -147,6 +158,8 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
     else:
         assert 0, "args.schedulers should be either 'exponential' or 'linear'"
 
+    sphere_scheduler = SphereScheduler(model, start_m, start_sigma, args.decrease_m_sigma_size) if args.decrease_m_sigma else None
+
     # main training loop
     start_time = time.time()
     entropy_avg_meter = AverageValueMeter()
@@ -192,38 +205,39 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
             from utils import validate
             validate(test_loader, model, epoch, writer, save_dir, args, clf_loaders=clf_loaders)
 
+        if args.decrease_m_sigma and (epoch + 1) % args.decrease_m_sigma_epochs_interval == 0:
+            (old_m, old_sigma), (new_m, new_sigma) = sphere_scheduler.step()
+            print(f'm {old_m} -> {new_m} | sigma {old_sigma} -> {new_sigma}')
+
         # save visualizations
         if (epoch + 1) % args.viz_freq == 0:
             # reconstructions
             model.eval()
             samples = model.reconstruct(inputs)
-            results = []
-            for idx in range(min(10, inputs.size(0))):
-                res = visualize_point_clouds(samples[idx], inputs[idx], idx,
-                                             pert_order=train_loader.dataset.display_axis_order)
-                results.append(res)
-            res = np.concatenate(results, axis=1)
-            imageio.imsave(os.path.join(save_dir, 'images', 'tr_vis_conditioned_epoch%d-gpu%s.png' % (epoch, args.gpu or '')),
-                              res.transpose((1, 2, 0)))
-            torch.save(res.transpose((1, 2, 0)), Path(save_dir) / 'metadata' / f'tr_vis_conditioned_epoch{epoch}-gpu{args.gpu or ""}.pt')
-            if writer is not None:
-                writer.add_image('tr_vis/conditioned', torch.as_tensor(res), epoch)
+
+            save_image(samples, inputs, train_loader.dataset.display_axis_order,
+                       images_dir / f'recon-epoch{epoch}-gpu{args.gpu or ""}.png',
+                       metadata_dir / f'recon-epoch{epoch}-gpu{args.gpu or ""}.pt',
+                       writer=writer, writer_tag='tr_vis/conditioned', epoch=epoch)
 
             # samples
             if args.use_latent_flow:
-                num_samples = min(10, inputs.size(0))
-                num_points = inputs.size(1)
+                num_samples, num_points = min(10, inputs.size(0)), inputs.size(1)
                 _, samples = model.sample(num_samples, num_points)
-                results = []
-                for idx in range(num_samples):
-                    res = visualize_point_clouds(samples[idx], inputs[idx], idx,
-                                                 pert_order=train_loader.dataset.display_axis_order)
-                    results.append(res)
-                res = np.concatenate(results, axis=1)
-                imageio.imsave(os.path.join(save_dir, 'images', 'tr_vis_conditioned_epoch%d-gpu%s.png' % (epoch, args.gpu)),
-                                  res.transpose((1, 2, 0)))
-                if writer is not None:
-                    writer.add_image('tr_vis/sampled', torch.as_tensor(res), epoch)
+
+                save_image(samples, inputs, train_loader.dataset.display_axis_order,
+                           images_dir / f'sample-epoch{epoch}-gpu{args.gpu or ""}.png',
+                           metadata_dir / f'sample-epoch{epoch}-gpu{args.gpu or ""}.pt',
+                           writer=writer, writer_tag='tr_vis/sampled', epoch=epoch)
+
+            # triangulation
+            if args.triangulation:
+                target_network_input, triangulation = generate(args.triangulation_method, args.triangulation_depth)
+                _, samples = model.triangulate(target_network_input)
+
+                save_triangulation(samples, triangulation.triangles,
+                                   mesh_dir / f'sample-epoch{epoch}.pt',
+                                   mesh_dir / f'triang-epoch{epoch}.pt')
 
         # save checkpoints
         if not args.distributed or (args.rank % ngpus_per_node == 0):

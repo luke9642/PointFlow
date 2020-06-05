@@ -34,7 +34,8 @@ python -u train.py \
     --prior_weight 0 \
     --entropy_weight 0 \
     --use_latent_flow \
-    --decrease_m_sigma
+    --decrease_m_sigma \
+    --triangulation
 
 echo "Done"
 exit 0

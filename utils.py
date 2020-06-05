@@ -1,4 +1,7 @@
+import pickle
 from pprint import pprint
+
+import imageio
 from sklearn.svm import LinearSVC
 from math import log, pi
 import os
@@ -133,6 +136,22 @@ def visualize_point_clouds(pts, gtr, idx, pert_order=[0, 1, 2]):
 
     plt.close()
     return res
+
+
+def save_image(samples, inputs, order, image_path, data_path, writer=None, writer_tag=None, epoch=None):
+    results = [visualize_point_clouds(samples[idx], inputs[idx], idx, pert_order=order) for idx in range(min(10, inputs.size(0)))]
+    res = np.concatenate(results, axis=1)
+
+    imageio.imsave(image_path, res.transpose((1, 2, 0)))
+    torch.save(res.transpose((1, 2, 0)), data_path)
+
+    if writer is not None:
+        writer.add_image('tr_vis/conditioned', torch.as_tensor(res), epoch)
+
+
+def save_triangulation(XX, T, target_path, triang_path):
+    torch.save(XX, target_path)
+    torch.save(T, triang_path)
 
 
 # Augmentation
@@ -323,7 +342,9 @@ def save(model, optimizer, epoch, path):
     d = {
         'epoch': epoch,
         'model': model.state_dict(),
-        'optimizer': optimizer.state_dict()
+        'optimizer': optimizer.state_dict(),
+        'm': model.sphere.m,
+        'sigma': model.sphere.sigma
     }
     torch.save(d, path)
 
@@ -337,7 +358,7 @@ def resume(path, model, optimizer=None, strict=True):
     start_epoch = ckpt['epoch']
     if optimizer is not None:
         optimizer.load_state_dict(ckpt['optimizer'])
-    return model, optimizer, start_epoch
+    return model, optimizer, start_epoch, ckpt['m'], ckpt['sigma']
 
 
 def validate(test_loader, model, epoch, writer, save_dir, args, clf_loaders=None):
