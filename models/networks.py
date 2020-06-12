@@ -3,6 +3,7 @@ import numpy as np
 import torch.nn.functional as F
 from torch import optim
 from torch import nn
+from metrics.sphere_triangles import generate
 from models.flow import get_point_cnf
 from models.flow import get_latent_cnf
 from models.sampling import Sphere3DSimple
@@ -187,6 +188,7 @@ class PointFlow(nn.Module):
 
         recon_nats = recon / float(x.size(1) * x.size(2))
         prior_nats = prior / float(self.zdim)
+        avg_log_likelihood = log_py.mean()
 
         if writer is not None:
             writer.add_scalar('train/entropy', entropy_log, step)
@@ -194,12 +196,14 @@ class PointFlow(nn.Module):
             writer.add_scalar('train/prior(nats)', prior_nats, step)
             writer.add_scalar('train/recon', recon, step)
             writer.add_scalar('train/recon(nats)', recon_nats, step)
+            writer.add_scalar('train/log_likelihood', avg_log_likelihood, step)
 
         return {
             'entropy': entropy_log.cpu().detach().item()
             if not isinstance(entropy_log, float) else entropy_log,
             'prior_nats': prior_nats,
             'recon_nats': recon_nats,
+            'log_likelihood': avg_log_likelihood.item()
         }
 
     def encode(self, x):
@@ -236,3 +240,10 @@ class PointFlow(nn.Module):
         z = self.latent_cnf(w, None, reverse=True).view(*w.size())
         x = self.point_cnf(target, z, reverse=True).view(*target.size())
         return z, x
+
+    def triang_recon(self, x, method='edge', depth=3):
+        z = self.encode(x)
+        y, T = generate(method, depth)
+        x = self.point_cnf(y[None, :], z, reverse=True).view(*y.size())
+
+        return y, x, T.triangles

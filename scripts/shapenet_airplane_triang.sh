@@ -1,7 +1,6 @@
 #! /bin/bash
 
-#    --resume_checkpoint checkpoints/ae/pretrained-airplane/checkpoint.pt \
-python demo.py \
+python triang.py \
     --cates airplane \
     --resume_checkpoint checkpoints/ae/shapenet15k-airplane-new-sampling-gauss/checkpoint-latest.pt \
     --dims 512-512-512 \
@@ -10,4 +9,8 @@ python demo.py \
     --use_latent_flow \
     --num_sample_shapes 20 \
     --num_sample_points 2048 \
-    --data_dir ../ShapeNetCore.v2.PC15k
+    --data_dir ../ShapeNetCore.v2.PC15k \
+    --save_triangulation \
+    --method edge \
+    --depth 5 \
+    --samples_num 3

@@ -1,7 +1,7 @@
 import sys
 import os
 from pathlib import Path
-
+import pandas as pd
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -12,13 +12,12 @@ import random
 import faulthandler
 import torch.multiprocessing as mp
 import time
-from metrics.sphere_triangles import generate
 from models.networks import PointFlow
 from torch import optim
 from args import get_args
 from torch.backends import cudnn
 from models.sampling import SphereScheduler
-from utils import AverageValueMeter, set_random_seed, apply_random_rotation, save, resume, save_triangulation, save_image
+from utils import AverageValueMeter, set_random_seed, apply_random_rotation, save, resume, save_image
 from tensorboardX import SummaryWriter
 from datasets import get_datasets, init_np_seed
 
@@ -32,8 +31,8 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
     metadata_dir.mkdir(parents=True, exist_ok=True)
     images_dir = Path(save_dir) / 'images'
     images_dir.mkdir(parents=True, exist_ok=True)
-    mesh_dir = Path(save_dir) / 'mesh'
-    mesh_dir.mkdir(parents=True, exist_ok=True)
+    loss_file = Path(save_dir) / 'log_likelihood.csv'
+    log_likelihoods = pd.read_csv(loss_file) if loss_file.exists() else pd.DataFrame()
 
     cudnn.benchmark = True
     args.gpu = gpu
@@ -93,13 +92,11 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
         args.resume_checkpoint = os.path.join(save_dir, 'checkpoint-latest.pt')  # use the latest checkpoint
     if args.resume_checkpoint is not None:
         if args.resume_optimizer:
-            model, optimizer, start_epoch, start_m, start_sigma = resume(
+            model, optimizer, start_epoch = resume(
                 args.resume_checkpoint, model, optimizer, strict=(not args.resume_non_strict))
         else:
-            model, _, start_epoch, start_m, start_sigma = resume(
+            model, _, start_epoch = resume(
                 args.resume_checkpoint, model, optimizer=None, strict=(not args.resume_non_strict))
-        model.sphere.m = start_m
-        model.sphere.sigma = start_sigma
         print('Resumed from: ' + args.resume_checkpoint)
 
     # initialize datasets and loaders
@@ -189,16 +186,17 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
                     tr_batch, rot_axis=train_loader.dataset.gravity_axis)
             inputs = tr_batch.cuda(args.gpu, non_blocking=True)
             out = model(inputs, optimizer, step, writer)
-            entropy, prior_nats, recon_nats = out['entropy'], out['prior_nats'], out['recon_nats']
+            entropy, prior_nats, recon_nats, log_likelihood = out['entropy'], out['prior_nats'], out['recon_nats'], out['log_likelihood']
+            log_likelihoods.append({'epoch': epoch, 'bidx': bidx, 'value': log_likelihood}, ignore_index=True)
             entropy_avg_meter.update(entropy)
             point_nats_avg_meter.update(recon_nats)
             latent_nats_avg_meter.update(prior_nats)
             if step % args.log_freq == 0:
                 duration = time.time() - start_time
                 start_time = time.time()
-                print("[Rank %d] Epoch %d Batch [%2d/%2d] Time [%3.2fs] Entropy %2.5f LatentNats %2.5f PointNats %2.5f"
+                print("[Rank %d] Epoch %d Batch [%2d/%2d] Time [%3.2fs] Entropy %2.5f LatentNats %2.5f PointNats %2.5f LogLikelihood %2.5f"
                       % (args.rank, epoch, bidx, len(train_loader), duration, entropy_avg_meter.avg,
-                         latent_nats_avg_meter.avg, point_nats_avg_meter.avg))
+                         latent_nats_avg_meter.avg, point_nats_avg_meter.avg, log_likelihood))
 
         # evaluate on the validation set
         if not args.no_validation and (epoch + 1) % args.val_freq == 0:
@@ -207,7 +205,7 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
 
         if args.decrease_m_sigma and (epoch + 1) % args.decrease_m_sigma_epochs_interval == 0:
             (old_m, old_sigma), (new_m, new_sigma) = sphere_scheduler.step()
-            print(f'm {old_m} -> {new_m} | sigma {old_sigma} -> {new_sigma}')
+            print(f'm {old_m:.5} -> {new_m:.5} | sigma {old_sigma:.5} -> {new_sigma:.5}')
 
         # save visualizations
         if (epoch + 1) % args.viz_freq == 0:
@@ -230,15 +228,6 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
                            metadata_dir / f'sample-epoch{epoch}-gpu{args.gpu or ""}.pt',
                            writer=writer, writer_tag='tr_vis/sampled', epoch=epoch)
 
-            # triangulation
-            if args.triangulation:
-                target_network_input, triangulation = generate(args.triangulation_method, args.triangulation_depth)
-                _, samples = model.triangulate(target_network_input)
-
-                save_triangulation(samples, triangulation.triangles,
-                                   mesh_dir / f'sample-epoch{epoch}.pt',
-                                   mesh_dir / f'triang-epoch{epoch}.pt')
-
         # save checkpoints
         if not args.distributed or (args.rank % ngpus_per_node == 0):
             if (epoch + 1) % args.save_freq == 0:
@@ -246,6 +235,7 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
                      os.path.join(save_dir, 'checkpoint-%d.pt' % epoch))
                 save(model, optimizer, epoch + 1,
                      os.path.join(save_dir, 'checkpoint-latest.pt'))
+                log_likelihoods.to_csv(loss_file)
 
 
 def main():

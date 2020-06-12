@@ -4,11 +4,10 @@ import numpy as np
 
 
 class Sphere3DSimple:
-    pi = torch.tensor(2 * ((2 * np.pi) ** (3 / 2)), device='cuda')
-
-    def __init__(self, sigma, m):
+    def __init__(self, sigma, m, device='cuda'):
         self.sigma = sigma
         self.m = m
+        self.device = device
 
     def norm(self, z):
         return .5 * torch.einsum('ijk,ijk->ij', z, z).log()
@@ -21,11 +20,11 @@ class Sphere3DSimple:
         k = (batch_size, num_points)
         r = torch.normal(0., 1., size=k)
         x = MultivariateNormal(torch.zeros(3), torch.eye(3)).rsample(k)
-        norm = .5 * torch.norm(x, dim=2).log()
+        norm = torch.norm(x, dim=2)
         return torch.exp(self.m + self.sigma * r).reshape(batch_size, -1, 1) * x / norm.reshape(batch_size, -1, 1)
 
     def mle(self, z):
-        pi = self.pi
+        pi = torch.tensor(2 * ((2 * np.pi) ** (3 / 2)), device=self.device)
         n = z.size(1)
         m = self.m
         sigma = self.sigma
@@ -44,8 +43,8 @@ class SphereScheduler:
         self.__m_step = (init_m - 0.) / size
 
     def step(self):
-        old_m = self.__sphere.m
-        old_sigma = self.__sphere.sigma
+        old_m = self.__sphere.m.clone()
+        old_sigma = self.__sphere.sigma.clone()
 
         if self.__size > 0:
             self.__sphere.m -= self.__m_step

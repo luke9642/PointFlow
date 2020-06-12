@@ -1,4 +1,3 @@
-import pickle
 from pprint import pprint
 
 import imageio
@@ -116,8 +115,14 @@ def set_random_seed(seed):
 
 # Visualization
 def visualize_point_clouds(pts, gtr, idx, pert_order=[0, 1, 2]):
-    pts = pts.cpu().detach().numpy()[:, pert_order]
-    gtr = gtr.cpu().detach().numpy()[:, pert_order]
+    try:
+        pts = pts.cpu().detach().numpy()
+        gtr = gtr.cpu().detach().numpy()
+    except AttributeError:
+        pass
+
+    pts = pts[:, pert_order]
+    gtr = gtr[:, pert_order]
 
     fig = plt.figure(figsize=(6, 3))
     ax1 = fig.add_subplot(121, projection='3d')
@@ -139,11 +144,11 @@ def visualize_point_clouds(pts, gtr, idx, pert_order=[0, 1, 2]):
 
 
 def save_image(samples, inputs, order, image_path, data_path, writer=None, writer_tag=None, epoch=None):
+    torch.save(samples.permute(1, 2, 0), data_path)
     results = [visualize_point_clouds(samples[idx], inputs[idx], idx, pert_order=order) for idx in range(min(10, inputs.size(0)))]
     res = np.concatenate(results, axis=1)
 
     imageio.imsave(image_path, res.transpose((1, 2, 0)))
-    torch.save(res.transpose((1, 2, 0)), data_path)
 
     if writer is not None:
         writer.add_image('tr_vis/conditioned', torch.as_tensor(res), epoch)
@@ -351,14 +356,14 @@ def save(model, optimizer, epoch, path):
 
 def resume(path, model, optimizer=None, strict=True):
     ckpt = torch.load(path)
-    # from pprint import pprint
-    # pprint(list(ckpt['model'].keys()))
 
     model.load_state_dict(ckpt['model'], strict=strict)
     start_epoch = ckpt['epoch']
     if optimizer is not None:
         optimizer.load_state_dict(ckpt['optimizer'])
-    return model, optimizer, start_epoch, ckpt['m'], ckpt['sigma']
+    model.sphere.m = ckpt['m']
+    model.sphere.sigma = ckpt['sigma']
+    return model, optimizer, start_epoch
 
 
 def validate(test_loader, model, epoch, writer, save_dir, args, clf_loaders=None):
