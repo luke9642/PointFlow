@@ -241,6 +241,22 @@ class PointFlow(nn.Module):
         x = self.point_cnf(target, z, reverse=True).view(*target.size())
         return z, x
 
+    def interpolate(self, x1, x2, space=5, num_points=None, truncate_std=None):
+        num_points = x1.size(1) if num_points is None else num_points
+        z1 = self.encode(x1)
+        z2 = self.encode(x2)
+        x_int = [self.decode((1 - alpha) * z1 + alpha * z2, num_points, truncate_std)[1] for alpha in np.linspace(0, 1, space)]
+        return torch.stack(x_int, dim=0)
+
+    def triang_interpolate(self, x1, x2, space=5, method='edge', depth=3):
+        z1 = self.encode(x1)
+        z2 = self.encode(x2)
+
+        y, T = generate(method, depth)
+        x_int = [self.point_cnf(y[None, :], (1 - alpha) * z1 + alpha * z2, reverse=True).view(*y.size()) for alpha in np.linspace(0, 1, space)]
+
+        return torch.stack(x_int, dim=0), T.triangles
+
     def triang_recon(self, x, method='edge', depth=3):
         z = self.encode(x)
         y, T = generate(method, depth)
