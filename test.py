@@ -148,9 +148,11 @@ def main(args):
     model = model.cuda()
     model.multi_gpu_wrapper(_transform_)
 
+    from utils import resume
+    model, _, start_epoch = resume(
+        args.resume_checkpoint, model, optimizer=None, strict=(not args.resume_non_strict))
+
     print("Resume Path:%s" % args.resume_checkpoint)
-    checkpoint = torch.load(args.resume_checkpoint)
-    model.load_state_dict(checkpoint)
     model.eval()
 
     with torch.no_grad():

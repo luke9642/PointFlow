@@ -26,7 +26,6 @@ faulthandler.enable()
 
 def main_worker(gpu, save_dir, ngpus_per_node, args):
     # basic setup
-    start_m, start_sigma = args.m, args.sigma
     metadata_dir = Path(save_dir) / 'metadata'
     metadata_dir.mkdir(parents=True, exist_ok=True)
     images_dir = Path(save_dir) / 'images'
@@ -99,6 +98,10 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
                 args.resume_checkpoint, model, optimizer=None, strict=(not args.resume_non_strict))
         print('Resumed from: ' + args.resume_checkpoint)
 
+    if args.overwrite:
+        model.sphere.m = args.m
+        model.sphere.sigma = args.sigma
+
     # initialize datasets and loaders
     tr_dataset, te_dataset = get_datasets(args)
     if args.distributed:
@@ -107,7 +110,7 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
         train_sampler = None
 
     train_loader = torch.utils.data.DataLoader(
-        dataset=tr_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
+        dataset=tr_dataset, batch_size=args.batch_size, shuffle=(False),
         num_workers=0, pin_memory=True, sampler=train_sampler, drop_last=True,
         worker_init_fn=init_np_seed)
     test_loader = torch.utils.data.DataLoader(
@@ -155,7 +158,7 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
     else:
         assert 0, "args.schedulers should be either 'exponential' or 'linear'"
 
-    sphere_scheduler = SphereScheduler(model, start_m, start_sigma, args.decrease_m_sigma_size) if args.decrease_m_sigma else None
+    sphere_scheduler = SphereScheduler(model, args.decrease_m_sigma_size, args.m, args.sigma) if args.decrease_m_sigma else None
 
     # main training loop
     start_time = time.time()
@@ -178,6 +181,8 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
 
         # train for one epoch
         for bidx, data in enumerate(train_loader):
+            if bidx > 1:
+                break
             idx_batch, tr_batch, te_batch = data['idx'], data['train_points'], data['test_points']
             step = bidx + len(train_loader) * epoch
             model.train()
@@ -187,7 +192,14 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
             inputs = tr_batch.cuda(args.gpu, non_blocking=True)
             out = model(inputs, optimizer, step, writer)
             entropy, prior_nats, recon_nats, log_likelihood = out['entropy'], out['prior_nats'], out['recon_nats'], out['log_likelihood']
-            log_likelihoods.append({'epoch': epoch, 'bidx': bidx, 'value': log_likelihood}, ignore_index=True)
+            log_likelihoods = log_likelihoods.append({
+                'epoch': epoch,
+                'bidx': bidx,
+                'value': log_likelihood,
+                'entropy': entropy,
+                'prior_nats': prior_nats.item(),
+                'recon_nats': recon_nats.item()
+            }, ignore_index=True)
             entropy_avg_meter.update(entropy)
             point_nats_avg_meter.update(recon_nats)
             latent_nats_avg_meter.update(prior_nats)
@@ -203,15 +215,14 @@ def main_worker(gpu, save_dir, ngpus_per_node, args):
             from utils import validate
             validate(test_loader, model, epoch, writer, save_dir, args, clf_loaders=clf_loaders)
 
-        if args.decrease_m_sigma and (epoch + 1) % args.decrease_m_sigma_epochs_interval == 0:
-            (old_m, old_sigma), (new_m, new_sigma) = sphere_scheduler.step()
-            print(f'm {old_m:.5} -> {new_m:.5} | sigma {old_sigma:.5} -> {new_sigma:.5}')
+        if args.decrease_m_sigma and epoch > args.decrease_m_sigma_initial_epoch and (epoch + 1) % args.decrease_m_sigma_epochs_interval == 0:
+            sphere_scheduler.step()
 
         # save visualizations
         if (epoch + 1) % args.viz_freq == 0:
             # reconstructions
             model.eval()
-            samples = model.reconstruct(inputs)
+            _, samples = model.reconstruct(inputs)
 
             save_image(samples, inputs, train_loader.dataset.display_axis_order,
                        images_dir / f'recon-epoch{epoch}-gpu{args.gpu or ""}.png',

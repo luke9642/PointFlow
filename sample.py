@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 
 from utils import resume, set_dir
-from metrics.sphere_triangles import generate
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -55,12 +54,12 @@ def reconstruct(args, model):
 
     truth = next(iter(test_loader))['test_points']
     truth = truth.cuda()
-    z, x, T = model.triang_recon(truth, args.method, args.depth)
-    return truth, x, T
+    z, x = model.reconstruct(truth)
+    return truth, x
 
 
 def main(args):
-    save_path = set_dir(Path('triangulation') / args.log_name)
+    save_path = set_dir(Path('sample') / args.log_name)
     images_path = set_dir(save_path / 'images')
 
     model = PointFlow(args)
@@ -72,9 +71,9 @@ def main(args):
 
     model.eval()
 
-    truth, recons, _ = reconstruct(args, model)
+    truth, recons = reconstruct(args, model)
 
-    file_path = f'{{}}-method_{args.method}-depth_{args.depth}-epoch_{start_epoch}-samples_{args.samples_num}.pt'
+    file_path = f'{{}}-epoch_{start_epoch}-samples_{args.batch_size}.pt'
 
     torch.save(truth, save_path / file_path.format('truth'))
     torch.save(recons, save_path / file_path.format('recons'))
@@ -82,16 +81,10 @@ def main(args):
     X = visualize_point_clouds(recons, truth, [0, 2, 1])
     imageio.imsave((images_path / file_path.format('recons')).with_suffix('.png'), X)
 
-    _, samples, _ = model.triang_sample(args.samples_num, args.method, args.depth)
-
+    _, samples = model.sample(args.batch_size, args.num_sample_points)
     torch.save(samples, save_path / file_path.format('samples'))
     X = interpolation.visualize_point_clouds(samples[:, None, :], [0, 2, 1])
     imageio.imsave((images_path / file_path.format('samples')).with_suffix('.png'), X.transpose((1, 2, 0)))
-
-    if args.save_triangulation:
-        _, triang = generate(args.method, args.depth)
-        torch.save(triang.triangles, save_path / f'triangulation-method_{args.method}-depth_{args.depth}.pt')
-
     print('Saved results to:', save_path / file_path)
 
 

@@ -67,17 +67,24 @@ def add_args(parser):
                         help='Learning rate exponential decay frequency')
 
     # sphere
-    parser.add_argument('--m', type=lambda x: np.fromstring(x, dtype=float, sep=' '), default=np.log(8. / np.pi) - np.log(3.) / 2.)
-    parser.add_argument('--sigma', type=lambda x: np.fromstring(x, dtype=float, sep=' '), default=np.sqrt(np.log((3 * np.pi) / 8)))
+    parser.add_argument('--m', type=float, default=np.math.log(8. / np.pi) - np.math.log(3.) / 2.)
+    parser.add_argument('--sigma', type=float, default=np.math.sqrt(np.math.log((3 * np.pi) / 8)))
     parser.add_argument('--decrease_m_sigma', action='store_true')
     parser.add_argument('--decrease_m_sigma_size', type=int, default=1000)
     parser.add_argument('--decrease_m_sigma_epochs_interval', type=int, default=1)
+    parser.add_argument('--decrease_m_sigma_initial_epoch', type=int, default=50)
+    parser.add_argument('--overwrite', action='store_true')
 
     # triangulation
+    parser.add_argument('--triangulation', action='store_true')
     parser.add_argument('--save_triangulation', action='store_true')
     parser.add_argument('--samples_num', type=int, default=3)
     parser.add_argument('--method', default='edge')
     parser.add_argument('--depth', type=int, default=2)
+
+    # interpolation
+    parser.add_argument('--n_interpolations', type=int, default=3)
+    parser.add_argument('--space', type=int, default=5)
 
     # data options
     parser.add_argument('--dataset_type', type=str, default="shapenet15k",

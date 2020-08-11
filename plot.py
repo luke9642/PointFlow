@@ -1,22 +1,10 @@
 import argparse
-from pathlib import Path
 
-import numpy as np
 import imageio
-import torch
 import matplotlib.pyplot as plt
+import numpy as np
 
-from utils import visualize_point_clouds
-
-
-def set_dir(path):
-    path = Path(path)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def load_tensor(x):
-    return torch.load(x, map_location=torch.device('cpu')) if x else None
+from utils import visualize_point_clouds, load_tensor, set_dir
 
 
 def visualize_point_cloud(pts, pert_order=[0, 1, 2]):

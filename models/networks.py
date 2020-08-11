@@ -74,9 +74,7 @@ class Encoder(nn.Module):
 class PointFlow(nn.Module):
     def __init__(self, args):
         super(PointFlow, self).__init__()
-        sigma = torch.tensor(args.sigma, dtype=torch.float32, device='cuda')
-        m = torch.tensor(args.m, dtype=torch.float32, device='cuda')
-        self.sphere = Sphere3DSimple(sigma, m)
+        self.sphere = Sphere3DSimple(args.sigma, args.m)
         self.input_dim = args.input_dim
         self.zdim = args.zdim
         self.use_latent_flow = args.use_latent_flow
@@ -213,11 +211,16 @@ class PointFlow(nn.Module):
         else:
             return self.reparameterize_gaussian(z_mu, z_sigma)
 
-    def decode(self, z, num_points, truncate_std=None):
-        # transform points from the prior to a point cloud, conditioned on a shape code
-        y = self.sample_gaussian((z.size(0), num_points, self.input_dim), truncate_std)
+    def decode(self, z, num_points=None, truncate_std=None):
+        num_points = z.size(1) if num_points is None else num_points
+        y = self.sphere.sample(z.size(0), num_points).cuda()
         x = self.point_cnf(y, z, reverse=True).view(*y.size())
         return y, x
+
+    def triang_decode(self, z, method='edge', depth=3):
+        y, T = generate(method, depth)
+        y = y[None, :].repeat(z.size(0), 1, 1).cuda()
+        return y, self.point_cnf(y, z, reverse=True).view(*y.size()), T.triangles
 
     def sample(self, batch_size, num_points, truncate_std=None, truncate_std_latent=None, gpu=None):
         assert self.use_latent_flow, "Sampling requires `self.use_latent_flow` to be True."
@@ -225,15 +228,24 @@ class PointFlow(nn.Module):
         w = self.sample_gaussian((batch_size, self.zdim), truncate_std_latent, gpu=gpu)
         z = self.latent_cnf(w, None, reverse=True).view(*w.size())
         # Sample points conditioned on the shape code
-        y = self.sphere.sample(batch_size, num_points)
-        x = self.point_cnf(y, z, reverse=True).view(*y.size())
+        y, x = self.decode(z, num_points)
         return z, x
+
+    def triang_sample(self, batch_size, method='edge', depth=3):
+        w = self.sample_gaussian((batch_size, self.zdim), None, gpu=None)
+        z = self.latent_cnf(w, None, reverse=True).view(*w.size())
+        return self.triang_decode(z, method, depth)
 
     def reconstruct(self, x, num_points=None, truncate_std=None):
         num_points = x.size(1) if num_points is None else num_points
         z = self.encode(x)
-        _, x = self.decode(z, num_points, truncate_std)
-        return x
+        y, x = self.decode(z, num_points, truncate_std)
+        return y, x
+
+    def triang_recon(self, x, method='edge', depth=3):
+        z = self.encode(x)
+        y, x, T = self.triang_decode(z, method, depth)
+        return y, x, T
 
     def triangulate(self, target):
         w = self.sample_gaussian((target.size(0), self.zdim), None, gpu=None)
@@ -252,14 +264,6 @@ class PointFlow(nn.Module):
         z1 = self.encode(x1)
         z2 = self.encode(x2)
 
-        y, T = generate(method, depth)
-        x_int = [self.point_cnf(y[None, :], (1 - alpha) * z1 + alpha * z2, reverse=True).view(*y.size()) for alpha in np.linspace(0, 1, space)]
+        x_int = [self.triang_decode((1 - alpha) * z1 + alpha * z2, method, depth)[1] for alpha in np.linspace(0, 1, space)]
 
-        return torch.stack(x_int, dim=0), T.triangles
-
-    def triang_recon(self, x, method='edge', depth=3):
-        z = self.encode(x)
-        y, T = generate(method, depth)
-        x = self.point_cnf(y[None, :], z, reverse=True).view(*y.size())
-
-        return y, x, T.triangles
+        return torch.stack(x_int, dim=0)

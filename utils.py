@@ -1,3 +1,4 @@
+from pathlib import Path
 from pprint import pprint
 
 import imageio
@@ -144,7 +145,7 @@ def visualize_point_clouds(pts, gtr, idx, pert_order=[0, 1, 2]):
 
 
 def save_image(samples, inputs, order, image_path, data_path, writer=None, writer_tag=None, epoch=None):
-    torch.save(samples.permute(1, 2, 0), data_path)
+    torch.save(torch.stack((samples, inputs), dim=1), data_path)
     results = [visualize_point_clouds(samples[idx], inputs[idx], idx, pert_order=order) for idx in range(min(10, inputs.size(0)))]
     res = np.concatenate(results, axis=1)
 
@@ -356,14 +357,18 @@ def save(model, optimizer, epoch, path):
 
 def resume(path, model, optimizer=None, strict=True):
     ckpt = torch.load(path)
-
-    model.load_state_dict(ckpt['model'], strict=strict)
-    start_epoch = ckpt['epoch']
-    if optimizer is not None:
-        optimizer.load_state_dict(ckpt['optimizer'])
-    model.sphere.m = ckpt['m']
-    model.sphere.sigma = ckpt['sigma']
-    return model, optimizer, start_epoch
+    try:
+        model.load_state_dict(ckpt['model'], strict=strict)
+        start_epoch = ckpt['epoch']
+        if optimizer is not None:
+            optimizer.load_state_dict(ckpt['optimizer'])
+        model.sphere.m = ckpt['m']
+        model.sphere.sigma = ckpt['sigma']
+        return model, optimizer, start_epoch
+    except KeyError:
+        print('Got KeyError: loading model only')
+        model.load_state_dict(ckpt, strict=strict)
+        return model, None, 0
 
 
 def validate(test_loader, model, epoch, writer, save_dir, args, clf_loaders=None):
@@ -411,3 +416,12 @@ def validate(test_loader, model, epoch, writer, save_dir, args, clf_loaders=None
         if writer is not None and v is not None:
             writer.add_scalar('val_conditioned/%s' % k, v, epoch)
 
+
+def set_dir(path):
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def load_tensor(x):
+    return torch.load(str(x), map_location=torch.device('cpu')) if x else None
